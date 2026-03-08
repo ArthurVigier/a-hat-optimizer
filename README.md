@@ -6,6 +6,8 @@ Extract and exploit the **agency direction (Â)** from LLM hidden states for too
 
 Â is a geometric direction in the latent space of language models that predicts when the model should invoke a tool — with **AUC > 0.94** across model sizes from 1.7B to 8B parameters, using a single linear projection extracted in under 1 second.
 
+For research detail see : https://github.com/ArthurVigier/jepa-agent
+
 ## Results
 
 | Model | Baseline | With Â | Gain |
