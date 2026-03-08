@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "a-hat-optimizer"
+version = "0.1.0"
+description = "Extract and exploit the agency direction (Â) from LLM hidden states for tool-use gating"
+readme = "README.md"
+license = {text = "Apache-2.0"}
+requires-python = ">=3.10"
+authors = [
+    {name = "Arthur", email = "arthur@example.com"},
+]
+keywords = ["llm", "agent", "tool-use", "geometry", "hidden-states", "interpretability"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    "numpy>=1.24.0",
+    "torch>=2.0.0",
+    "transformers>=4.40.0",
+    "scikit-learn>=1.3.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0", "pytest-cov", "ruff"]
+viz = ["matplotlib>=3.8.0", "plotly>=5.0"]
+
+[project.urls]
+Homepage = "https://github.com/arthur/a-hat-optimizer"
+Repository = "https://github.com/arthur/a-hat-optimizer"
+
+[tool.setuptools.packages.find]
+include = ["a_hat_optimizer*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"

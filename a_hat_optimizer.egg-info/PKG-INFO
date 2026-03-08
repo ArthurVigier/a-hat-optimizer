@@ -1,0 +1,196 @@
+Metadata-Version: 2.4
+Name: a-hat-optimizer
+Version: 0.1.0
+Summary: Extract and exploit the agency direction (Â) from LLM hidden states for tool-use gating
+Author-email: Arthur <arthur@example.com>
+License: Apache-2.0
+Project-URL: Homepage, https://github.com/arthur/a-hat-optimizer
+Project-URL: Repository, https://github.com/arthur/a-hat-optimizer
+Keywords: llm,agent,tool-use,geometry,hidden-states,interpretability
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Science/Research
+Classifier: License :: OSI Approved :: Apache Software License
+Classifier: Programming Language :: Python :: 3
+Classifier: Topic :: Scientific/Engineering :: Artificial Intelligence
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: numpy>=1.24.0
+Requires-Dist: torch>=2.0.0
+Requires-Dist: transformers>=4.40.0
+Requires-Dist: scikit-learn>=1.3.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0; extra == "dev"
+Requires-Dist: pytest-cov; extra == "dev"
+Requires-Dist: ruff; extra == "dev"
+Provides-Extra: viz
+Requires-Dist: matplotlib>=3.8.0; extra == "viz"
+Requires-Dist: plotly>=5.0; extra == "viz"
+
+# a-hat-optimizer
+
+Extract and exploit the **agency direction (Â)** from LLM hidden states for tool-use gating.
+
+Â is a geometric direction in the latent space of language models that predicts when the model should invoke a tool — with **AUC > 0.94** across model sizes from 1.7B to 8B parameters, using a single linear projection extracted in under 1 second.
+
+## Results
+
+| Model | Baseline | With Â | Gain |
+|-------|----------|--------|------|
+| Qwen3-1.7B | 26.7% | **85%** | +58.3 |
+| Qwen3-8B | 52.5% | **76.3%** | +23.8 |
+
+The gain is **inversely proportional to model size** — smaller models benefit more because their textual decoding bottleneck is tighter, while the geometric signal is equally strong.
+
+## Installation
+
+```bash
+pip install a-hat-optimizer
+```
+
+## Quick Start
+
+### One-liner: extract Â from any HuggingFace model
+
+```python
+from a_hat_optimizer import AHat
+
+# Auto-extract (loads model, runs contrastive prompts, calibrates threshold)
+a_hat = AHat.from_model("Qwen/Qwen3-8B")
+print(a_hat)
+# AHat(dim=4096, θ=12.3456, AUC=0.953, model=Qwen/Qwen3-8B)
+
+# Save for later
+a_hat.save("my_a_hat/")
+```
+
+### Use in an agent loop
+
+```python
+from a_hat_optimizer import AHat, HiddenStateHook
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+model = AutoModelForCausalLM.from_pretrained("Qwen/Qwen3-8B", dtype="bfloat16", device_map="cuda")
+tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-8B")
+
+# Load pre-extracted Â
+a_hat = AHat.from_file("my_a_hat/")
+
+# Hook to capture hidden states during generation
+hook = HiddenStateHook(model, layer=18)
+
+# In your agent loop:
+inputs = tokenizer("What is the weather in Paris?", return_tensors="pt").to("cuda")
+model.generate(**inputs, max_new_tokens=200)
+
+h = hook.get(pooling="mean")
+should_call_tool, confidence = a_hat.predict(h)
+
+if should_call_tool:
+    print(f"Tool call recommended (confidence: {confidence:.2f})")
+else:
+    print(f"No tool needed (confidence: {confidence:.2f})")
+
+hook.remove()
+```
+
+### Extract from your own traces
+
+```python
+import numpy as np
+from a_hat_optimizer import AHat
+
+# Your hidden states and labels (1=tool call, 0=no tool)
+hidden_states = np.load("my_hidden_states.npy")  # (n_steps, hidden_dim)
+labels = np.load("my_labels.npy")                 # (n_steps,)
+
+a_hat = AHat.from_traces(hidden_states, labels, calibrate=True)
+print(f"AUC: {a_hat.metadata['auc']:.3f}")
+```
+
+### Threshold calibration
+
+```python
+from a_hat_optimizer import AHat
+
+a_hat = AHat.from_file("my_a_hat/")
+
+# Manual
+a_hat.set_threshold(15.0)
+
+# Auto-calibrate with different strategies
+a_hat.auto_calibrate(hidden_states, labels, strategy="midpoint")  # default
+a_hat.auto_calibrate(hidden_states, labels, strategy="f1")        # maximize F1
+a_hat.auto_calibrate(hidden_states, labels, strategy="youden")    # maximize sensitivity+specificity
+a_hat.auto_calibrate(hidden_states, labels, strategy="percentile")  # conservative (5% FP rate)
+
+# Full sweep for analysis
+from a_hat_optimizer import AHatCalibrator
+calibrator = AHatCalibrator(a_hat.direction)
+sweep = calibrator.sweep(hidden_states, labels)
+# sweep contains precision/recall/F1 curves for plotting
+```
+
+### Hook as context manager
+
+```python
+from a_hat_optimizer import HiddenStateHook
+
+with HiddenStateHook(model, layer=18) as hook:
+    model(**inputs)
+    h = hook.get(pooling="last")
+# hook is automatically removed
+```
+
+## How it works
+
+1. **Contrastive extraction**: We pass pairs of prompts through the model — one requiring tool use ("Search for the weather in Tokyo") and one that's passive ("Weather patterns are influenced by atmospheric pressure"). The mean difference between their hidden states at the middle layer defines the Â direction.
+
+2. **Prediction**: For any new hidden state, we project it onto Â. If the projection exceeds the calibrated threshold θ, the model "wants" to call a tool but may not be able to express it textually.
+
+3. **Why it works**: LLMs encode more information in their hidden states than they can express through token generation. The agency signal (AUC > 0.94) is present from 1.7B to 8B parameters, but textual tool-calling ability varies drastically (27% → 62%). Â bypasses the textual bottleneck.
+
+## API Reference
+
+### `AHat`
+
+| Method | Description |
+|--------|-------------|
+| `AHat.from_model(model_id)` | Auto-extract from HuggingFace model |
+| `AHat.from_file(path)` | Load from .npy, .npz, or directory |
+| `AHat.from_traces(H, labels)` | Extract from pre-collected data |
+| `.predict(h)` | → `(bool, float)` — should call tool, confidence |
+| `.predict_batch(H)` | → `(bool[], float[])` — batch prediction |
+| `.set_threshold(θ)` | Manual threshold |
+| `.auto_calibrate(H, labels, strategy)` | Auto threshold from data |
+| `.save(path)` | Save to directory |
+| `.info()` | Summary dict |
+
+### `HiddenStateHook`
+
+| Method | Description |
+|--------|-------------|
+| `HiddenStateHook(model, layer)` | Install hook on a layer |
+| `.get(pooling)` | Get captured state ("last", "mean", "all") |
+| `.remove()` | Remove hook |
+
+### `AHatCalibrator`
+
+| Method | Description |
+|--------|-------------|
+| `.calibrate(H, labels, strategy)` | Calibrate threshold |
+| `.sweep(H, labels)` | Full precision/recall sweep |
+
+## Citation
+
+```bibtex
+@misc{ahat2026,
+  title={Agency Direction in LLM Hidden States: Geometric Tool-Use Gating Across Model Scales},
+  author={Arthur},
+  year={2026},
+  note={https://github.com/arthur/a-hat-optimizer}
+}
+```
+
+## License
+
+Apache 2.0
