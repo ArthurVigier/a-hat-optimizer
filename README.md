@@ -163,7 +163,7 @@ with HiddenStateHook(model, layer=18) as hook:
   title={Agency Direction in LLM Hidden States: Geometric Tool-Use Gating Across Model Scales},
   author={Arthur},
   year={2026},
-  note={https://github.com/arthur/a-hat-optimizer}
+  note={https://github.com/ArthurVigier/a-hat-optimizer}
 }
 ```
 
