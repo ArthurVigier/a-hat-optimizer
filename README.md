@@ -1,3 +1,5 @@
+
+
 # a-hat-optimizer
 
 [![PyPI version](https://badge.fury.io/py/a-hat-optimizer.svg)](https://badge.fury.io/py/a-hat-optimizer)
@@ -22,6 +24,8 @@ The gain is **inversely proportional to model size** — smaller models benefit 
 ```bash
 pip install a-hat-optimizer
 ```
+
+> Requires Python >= 3.10.
 
 ## Quick Start
 
